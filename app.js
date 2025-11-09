@@ -11,6 +11,7 @@ let endTime = 0;              // Zielzeitpunkt in ms
 let lastWhole = null;         // Letzter gesprochener ganzzahliger Wert
 let warmedUpTTS = false;      // TTS vorgewarmt?
 let deVoice = null;           // ausgewaehlte deutsche Stimme
+let wakeLock = null;          // Screen Wake Lock Handle
 
 const timerEl = document.getElementById('timer');   // Anzeige: Sekunden
 const statusEl = document.getElementById('status'); // Anzeige: Status
@@ -56,6 +57,9 @@ let audioCtx;
 function playTriGong(){
   return new Promise(resolve => {
     if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    if (audioCtx.state === 'suspended') {
+      audioCtx.resume().catch(()=>{});
+    }
     const hit = (frequency, delayMs) => {
       const t0 = audioCtx.currentTime + (delayMs/1000);
       const osc = audioCtx.createOscillator();
@@ -86,6 +90,83 @@ function playTriGong(){
   });
 }
 
+// ===================== Wake Lock (Bildschirm an) =====================
+async function requestWakeLock(){
+  if (!('wakeLock' in navigator)) return;
+  try {
+    if (wakeLock && wakeLock.released === false) {
+      try { await wakeLock.release(); } catch(_){}
+    }
+    wakeLock = await navigator.wakeLock.request('screen');
+    wakeLock.addEventListener('release', () => {
+      // no-op; bei Sichtbarkeitswechsel neu anfordern
+    });
+  } catch (_) {
+    // still akzeptieren (OS/Browser kann blockieren)
+  }
+}
+
+async function releaseWakeLock(){
+  if (wakeLock) {
+    try { await wakeLock.release(); } catch(_){/* noop */}
+    wakeLock = null;
+  }
+}
+
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible' && running) {
+    requestWakeLock();
+    if (audioCtx && audioCtx.state === 'suspended') {
+      audioCtx.resume().catch(()=>{});
+    }
+  }
+});
+
+// ===================== Media Session (OS-Integration) =====================
+function setMediaSessionPlaying(){
+  if (!('mediaSession' in navigator)) return;
+  try {
+    navigator.mediaSession.metadata = new MediaMetadata({
+      title: 'Dehnuebungen Timer',
+      artist: 'Timer',
+      album: 'Session',
+      artwork: [
+        { src: './icons/icon-192.png', sizes: '192x192', type: 'image/png' },
+        { src: './icons/icon-512.png', sizes: '512x512', type: 'image/png' }
+      ]
+    });
+    navigator.mediaSession.playbackState = 'playing';
+  } catch(_){/* noop */}
+}
+
+function setMediaSessionPaused(){
+  if (!('mediaSession' in navigator)) return;
+  try { navigator.mediaSession.playbackState = 'paused'; } catch(_){/* noop */}
+}
+
+function setMediaActionHandlers(){
+  if (!('mediaSession' in navigator)) return;
+  try {
+    navigator.mediaSession.setActionHandler('play', () => {
+      if (paused) {
+        const remain = Math.max(0, Number(timerEl.textContent)||0);
+        startCountdown(remain);
+      } else if (!running) {
+        startCountdown(getSelectedSeconds());
+      }
+    });
+    navigator.mediaSession.setActionHandler('pause', () => {
+      if (running && !paused) {
+        document.getElementById('pauseBtn').click();
+      }
+    });
+    const noop = ()=>{};
+    ;['stop','seekbackward','seekforward','seekto','previoustrack','nexttrack'].forEach(a => {
+      try { navigator.mediaSession.setActionHandler(a, noop); } catch(_){/* noop */}
+    });
+  } catch(_){/* noop */}
+}
+
 // Countdown starten
 function startCountdown(sec){
   warmupTTS();                        // TTS frueh starten, damit synchron
@@ -93,6 +174,13 @@ function startCountdown(sec){
   endTime = performance.now() + sec * 1000;
   statusEl.textContent = 'Action';
   timerEl.textContent = sec;
+  // Bildschirm anhalten und Media Session konfigurieren
+  requestWakeLock();
+  setMediaSessionPlaying();
+  setMediaActionHandlers();
+  if (audioCtx && audioCtx.state === 'suspended') {
+    audioCtx.resume().catch(()=>{});
+  }
 
   const loop = () => {
     if (!running || paused) return;
@@ -181,6 +269,7 @@ document.getElementById('pauseBtn').addEventListener('click', () => {
     paused = true; statusEl.textContent = 'Pausiert';
     cancelAnimationFrame(rafId);
     try{ speechSynthesis.cancel(); }catch(e){}
+    setMediaSessionPaused();
   } else {
     const remain = Math.max(0, Number(timerEl.textContent)||0);
     startCountdown(remain);
@@ -192,12 +281,16 @@ document.getElementById('resetBtn').addEventListener('click', () => {
   try{ speechSynthesis.cancel(); }catch(e){}
   timerEl.textContent = getSelectedSeconds();
   statusEl.textContent = 'Bereit';
+  setMediaSessionPaused();
+  releaseWakeLock();
 });
 
 document.getElementById('stopBtn').addEventListener('click', () => {
   running = false; paused = false; cancelAnimationFrame(rafId);
   try{ speechSynthesis.cancel(); }catch(e){}
   statusEl.textContent = 'Gestoppt';
+  setMediaSessionPaused();
+  releaseWakeLock();
 });
 
 // Stimmenliste kann spaet geladen werden
