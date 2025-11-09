@@ -5,6 +5,7 @@
 // ===================== Zustand =====================
 let running = false;          // laeuft der Timer?
 let paused = false;           // ist der Timer pausiert?
+let customSelected = null;    // vom Nutzer gesetzte freie Sekunden (oder null)
 let rafId = null;             // requestAnimationFrame ID
 let endTime = 0;              // Zielzeitpunkt in ms
 let lastWhole = null;         // Letzter gesprochener ganzzahliger Wert
@@ -16,6 +17,7 @@ const statusEl = document.getElementById('status'); // Anzeige: Status
 
 // Aktuell gewaehlte Sekunden auslesen
 function getSelectedSeconds(){
+  if (typeof customSelected === 'number' && customSelected > 0) return customSelected;
   const active = document.querySelector('.opt[aria-checked="true"]');
   return Number(active?.dataset.seconds || 45);
 }
@@ -89,7 +91,7 @@ function startCountdown(sec){
   warmupTTS();                        // TTS frueh starten, damit synchron
   running = true; paused = false; lastWhole = null;
   endTime = performance.now() + sec * 1000;
-  statusEl.textContent = 'Laeuft';
+  statusEl.textContent = 'Action';
   timerEl.textContent = sec;
 
   const loop = () => {
@@ -98,11 +100,17 @@ function startCountdown(sec){
     const remainingMs = Math.max(0, endTime - now);
     const remainingWhole = Math.ceil(remainingMs / 1000);
 
-    // Jede Sekunde aktualisieren & ansagen (10..1)
+    // Jede Sekunde aktualisieren & ansagen
     if (remainingWhole !== lastWhole){
       timerEl.textContent = remainingWhole;             // Anzeige sekundenaktuell
-      if (remainingWhole <= 10 && remainingWhole > 0){
-        speakNow(remainingWhole);                       // synchron zur Anzeige
+      // Regel: volle 10er Schritte (z.B. 60,50,40,30,20,10)
+      // und Einzelzaehlung erst ab 5 (5,4,3,2,1)
+      if (remainingWhole > 0){
+        const isTenStep = (remainingWhole % 10 === 0);
+        const isFinalFive = (remainingWhole <= 5);
+        if (isTenStep || isFinalFive){
+          speakNow(remainingWhole);                     // synchron zur Anzeige
+        }
       }
       lastWhole = remainingWhole;
     }
@@ -130,12 +138,37 @@ for (const btn of document.querySelectorAll('.opt')){
   btn.addEventListener('click', () => {
     for (const b of document.querySelectorAll('.opt')) b.setAttribute('aria-checked','false');
     btn.setAttribute('aria-checked','true');
+    customSelected = null; // Wechsel zu vordefinierter Option
     if (!running){
       timerEl.textContent = Number(btn.dataset.seconds);
       statusEl.textContent = 'Bereit';
     }
   });
 }
+
+// Freie Wahl: Sekundeneingabe uebernehmen
+const customInput = document.getElementById('customSec');
+const useCustomBtn = document.getElementById('useCustomBtn');
+
+function applyCustomSeconds(){
+  const val = Number(customInput?.value);
+  if (!Number.isFinite(val) || val <= 0) {
+    statusEl.textContent = 'Ungueltige Eingabe';
+    return;
+  }
+  const sec = Math.min(600, Math.max(1, Math.floor(val)));
+  customSelected = sec;
+  for (const b of document.querySelectorAll('.opt')) b.setAttribute('aria-checked','false');
+  if (!running){
+    timerEl.textContent = sec;
+    statusEl.textContent = 'Bereit';
+  }
+}
+
+useCustomBtn?.addEventListener('click', applyCustomSeconds);
+customInput?.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') applyCustomSeconds();
+});
 
 // Start/Pause/Reset/Stop
 document.getElementById('startBtn').addEventListener('click', () => {

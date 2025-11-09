@@ -46,6 +46,18 @@
       padding:12px 16px; border-radius:10px; font-weight:800; letter-spacing:.2px;
     }
     .opt[aria-checked="true"]{background:var(--brand); color:#fff; border-color:var(--brand)}
+    .groupRow{display:flex; gap:10px; align-items:center; justify-content:center; flex-wrap:nowrap}
+    .customBox{display:flex; gap:8px; background:#fff; padding:8px; border-radius:14px; box-shadow:0 2px 10px rgba(0,0,0,.06)}
+    .optInput{
+      width:60px; padding:12px 12px; border-radius:10px; border:2px solid var(--optBorder);
+      font-size:16px; font-weight:700; letter-spacing:.2px; color:var(--fg);
+      outline:none;
+    }
+    .optInput:focus{border-color:var(--brand)}
+    #useCustomBtn{
+      width:44px; height:44px; padding:0; display:inline-flex; align-items:center; justify-content:center;
+      aspect-ratio:1/1; border-radius:10px; font-size:18px;
+    }
     .timer{
       width:100%; background:#fff; border-radius:16px; padding:20px; box-shadow:0 8px 30px rgba(0,0,0,.08);
       display:flex; flex-direction:column; align-items:center; gap:4px;
@@ -56,13 +68,19 @@
 </head>
 <body>
 
-  <!-- Dauer-Auswahl (aus deiner Datei uebernommen & PWA-tauglich gemacht) -->
-  <div class="group" role="radiogroup" aria-label="Dauer pro Uebung">
-    <button class="opt" role="radio" aria-checked="false" data-seconds="30">30 s</button>
-    <button class="opt" role="radio" aria-checked="true" data-seconds="45">45 s</button>
-    <button class="opt" role="radio" aria-checked="false" data-seconds="60">60 s</button>
+  <!-- Dauer-Auswahl (vordefiniert + freie Wahl) -->
+  <div class="groupRow" aria-label="Dauer pro Uebung">
+    <div class="group" role="radiogroup">
+      <button class="opt" role="radio" aria-checked="false" data-seconds="30">30 s</button>
+      <button class="opt" role="radio" aria-checked="true" data-seconds="45">45 s</button>
+      <button class="opt" role="radio" aria-checked="false" data-seconds="60">60 s</button>
+    </div>
+    <div class="customBox" aria-label="Freie Dauer">
+      <input id="customSec" class="optInput" type="number" min="1" max="600" inputmode="numeric" placeholder="Sek." />
+      <button id="useCustomBtn" class="ghost" aria-label="Uebernehmen"><span aria-hidden="true">▶</span></button>
+    </div>
   </div>
-  <div class="sub">Waehle die Dauer pro Uebung. Standard: 45 Sekunden.</div>
+  <div class="sub">Waehle die Dauer pro Uebung oder gib eine eigene Zahl an.</div>
 
   <!-- Logo (kannst du spaeter durch lokale PNGs ersetzen) -->
   <img src="https://s3.us-east-1.amazonaws.com/unode1/assets%2Fassets%2F24947%2F6322ad84-d4ec-4da4-9079-142e8e2a4b80-1.1755086759.ico"
