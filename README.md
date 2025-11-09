@@ -1,3 +1,3 @@
 # Dehnübungen-Timer
 
-Verfügbar unter: timer.stefmeier.ch
+Verfügbar unter: <timer.stefmeier.ch>
