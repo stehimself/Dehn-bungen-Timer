@@ -1,86 +1,86 @@
 // /sw.js
-// Einfacher App-Shell Service Worker mit zwei Caches:
-// - STATIC (Cache First) fuer CSS/JS/Icons/Manifest
-// - HTML (Network First + Offline-Fallback) fuer Seiteninhalte
+// Aktualisierungsfreundlicher Service Worker mit Offline-Fallback.
+// Ziele:
+// - Immer aktuelle Assets, solange online (network-first + no-cache Revalidation)
+// - Offline: sinnvolles Fallback auf offline.html bzw. zuletzt bekannte Versionen
 
-const STATIC_CACHE = 'static-v1';
-const HTML_CACHE   = 'html-v1';
-const OFFLINE_URL  = './offline.html';
+const VERSION = 'v2';
+const OFFLINE_URL = './offline.html';
+const RUNTIME_CACHE = `runtime-${VERSION}`;
+const OFFLINE_CACHE = `offline-${VERSION}`;
 
-// Dateiliste fuer den Install-Cache (App-Shell)
-const STATIC_ASSETS = [
-  './',
-  './index.html',
-  './app.js',
-  './manifest.webmanifest',
-  './offline.html',
-  './icons/icon-192.png',
-  './icons/icon-512.png',
-  './icons/icon-512-maskable.png'
-];
-
-// Install: App-Shell vorcachen
+// Install: Offline-Seite vorcachen und sofort aktiv werden
 self.addEventListener('install', (event) => {
   event.waitUntil(
-    caches.open(STATIC_CACHE).then(cache => cache.addAll(STATIC_ASSETS))
+    (async () => {
+      const cache = await caches.open(OFFLINE_CACHE);
+      await cache.add(new Request(OFFLINE_URL, { cache: 'reload' }));
+    })()
   );
   self.skipWaiting();
 });
 
-// Activate: alte Caches aufraeumen
+// Activate: alte Caches loeschen und Kontrolle uebernehmen
 self.addEventListener('activate', (event) => {
   event.waitUntil(
-    caches.keys().then(keys =>
-      Promise.all(keys.map(k => {
-        if (![STATIC_CACHE, HTML_CACHE].includes(k)) return caches.delete(k);
-      }))
-    )
+    (async () => {
+      const keep = new Set([RUNTIME_CACHE, OFFLINE_CACHE]);
+      const keys = await caches.keys();
+      await Promise.all(keys.map((k) => (keep.has(k) ? Promise.resolve(false) : caches.delete(k))));
+      await self.clients.claim();
+    })()
   );
-  self.clients.claim();
 });
 
-// Fetch-Strategien:
-// - HTML: Network First, bei Fehler Offline-Seite
-// - Sonst: Cache First, dann Netz
+function isNavigationRequest(request) {
+  return request.mode === 'navigate' || (request.headers.get('accept') || '').includes('text/html');
+}
+
+// Fetch-Strategien
 self.addEventListener('fetch', (event) => {
-  const req = event.request;
+  const { request } = event;
+  if (request.method !== 'GET') return; // Nicht in Nicht-GET eingreifen
 
-  // HTML-Seiten erkennen
-  const isHTML = req.mode === 'navigate' ||
-                 (req.headers.get('accept') || '').includes('text/html');
+  const url = new URL(request.url);
 
-  if (isHTML) {
-    event.respondWith(networkFirst(req));
-  } else {
-    event.respondWith(cacheFirst(req));
+  if (isNavigationRequest(request)) {
+    // HTML/Navigations-Anfragen: Network-first mit Offline-Fallback
+    event.respondWith(
+      (async () => {
+        const cache = await caches.open(RUNTIME_CACHE);
+        try {
+          const fresh = await fetch(request, { cache: 'no-cache' });
+          cache.put(request, fresh.clone());
+          return fresh;
+        } catch (err) {
+          const cached = await cache.match(request);
+          return (
+            cached ||
+            (await caches.match(OFFLINE_URL)) ||
+            new Response('Offline', { status: 503, statusText: 'Offline' })
+          );
+        }
+      })()
+    );
+    return;
   }
+
+  // Gleicher Ursprung: Assets (JS/CSS/Icons/Manifest) ebenfalls network-first
+  if (url.origin === self.location.origin) {
+    event.respondWith(
+      (async () => {
+        const cache = await caches.open(RUNTIME_CACHE);
+        try {
+          const fresh = await fetch(request, { cache: 'no-cache' });
+          cache.put(request, fresh.clone());
+          return fresh;
+        } catch (err) {
+          const cached = await cache.match(request);
+          if (cached) return cached;
+          return new Response('Offline', { status: 503, statusText: 'Offline' });
+        }
+      })()
+    );
+  }
+  // Fremdurspruenge: Browser-Standardverhalten (keine Uebernahme)
 });
-
-// Network First fuer HTML
-async function networkFirst(request){
-  const cache = await caches.open(HTML_CACHE);
-  try {
-    const fresh = await fetch(request);
-    cache.put(request, fresh.clone());
-    return fresh;
-  } catch (err) {
-    const cached = await cache.match(request);
-    return cached || caches.match(OFFLINE_URL);
-  }
-}
-
-// Cache First fuer statische Assets
-async function cacheFirst(request){
-  const cached = await caches.match(request);
-  if (cached) return cached;
-  try {
-    const fresh = await fetch(request);
-    const cacheName = STATIC_CACHE;
-    const cache = await caches.open(cacheName);
-    cache.put(request, fresh.clone());
-    return fresh;
-  } catch (err) {
-    // Im Fehlerfall nichts weiter moeglich
-    return new Response('', {status: 408, statusText: 'Offline'});
-  }
-}

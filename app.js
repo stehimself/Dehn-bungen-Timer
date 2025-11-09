@@ -303,7 +303,9 @@ if (typeof speechSynthesis !== 'undefined'){
 // Nutzt relativen Pfad, funktioniert auch in Unterordnern.
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
-    navigator.serviceWorker.register('./sw.js')
+    navigator.serviceWorker
+      .register('./sw.js', { updateViaCache: 'none' })
+      .then(reg => { try { reg.update(); } catch(_){} })
       .catch(err => console.error('SW Registrierung fehlgeschlagen:', err));
   });
 }
