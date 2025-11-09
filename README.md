@@ -1,2 +1,1 @@
-# Dehn-bungen-Timer
-bla
+# Dehnübungen-Timer
